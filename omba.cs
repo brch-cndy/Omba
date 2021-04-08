@@ -74,6 +74,7 @@ namespace omba
             this.Client.Ready += this.Client_Ready;
             this.Client.GuildAvailable += this.Client_GuildAvailable;
             this.Client.ClientErrored += this.Client_ClientError;
+            this.Client.MessageCreated += Client_CommandHandler;
 
             // let's enable interactivity, and set default options
             this.Client.UseInteractivity(new InteractivityConfiguration
@@ -95,7 +96,9 @@ namespace omba
                 EnableDms = true,
 
                 // enable mentioning the bot as a command prefix
-                EnableMentionPrefix = true
+                EnableMentionPrefix = true,
+
+                UseDefaultCommandHandler = false
             };
 
             // and hook them up
@@ -103,12 +106,12 @@ namespace omba
 
             // let's hook some command events, so we know what's 
             // going on
-            this.Commands.CommandExecuted += this.Commands_CommandExecuted;
+            //this.Commands.CommandExecuted += this.Commands_CommandExecuted;
             this.Commands.CommandErrored += this.Commands_CommandErrored;
 
             // up next, let's register our commands
             this.Commands.RegisterCommands<Matchmaking>();
-            this.Commands.RegisterCommands<Images>();
+            this.Commands.RegisterCommands<AdminTypeGamePlay>();
 
 
             // finally, let's connect and log in
@@ -131,6 +134,34 @@ namespace omba
             // since this method is not async, let's return
             // a completed task, so that no additional work
             // is done
+            return Task.CompletedTask;
+        }
+        private Task Client_CommandHandler(DiscordClient client, MessageCreateEventArgs e)
+        {
+            var cmdPrefix = "";
+            using (var fs = File.OpenRead("config.json"))
+            using (var sr = new StreamReader(fs, new UTF8Encoding(false)))
+                cmdPrefix = JsonConvert.DeserializeObject<ConfigJson>(sr.ReadToEnd()).CommandPrefix;
+
+            var cnext = client.GetCommandsNext();
+            var msg = e.Message;
+
+            var cmdStart = msg.GetStringPrefixLength(cmdPrefix);
+            if (cmdStart == -1)
+                return Task.CompletedTask;
+
+            var prefix = msg.Content.Substring(0, cmdStart);
+            var cmdString = msg.Content.Substring(cmdStart);
+
+            var command = cnext.FindCommand(cmdString, out var args);
+            if (command == null)
+                return Task.CompletedTask;
+            
+            var ctx = cnext.CreateContext(msg, prefix, command, args);
+            Task.Run(async () => await cnext.ExecuteCommandAsync(ctx));
+
+            Console.WriteLine($"{BotEventId}, {e.Author.Username} successfully executed '{e.Message.Content}'");
+
             return Task.CompletedTask;
         }
 
@@ -157,7 +188,7 @@ namespace omba
             return Task.CompletedTask;
         }
 
-        private Task Commands_CommandExecuted(CommandsNextExtension sender, CommandExecutionEventArgs e)
+        /*private Task Commands_CommandExecuted(CommandsNextExtension sender, CommandExecutionEventArgs e)
         {
             // let's log the name of the command and user
             Console.WriteLine($"{BotEventId}, {e.Context.User.Username} successfully executed '{e.Command.QualifiedName}'");
@@ -166,7 +197,7 @@ namespace omba
             // a completed task, so that no additional work
             // is done
             return Task.CompletedTask;
-        }
+        }*/
 
         private async Task Commands_CommandErrored(CommandsNextExtension sender, CommandErrorEventArgs e)
         {
@@ -185,8 +216,8 @@ namespace omba
                 // let's wrap the response into an embed
                 var embed = new DiscordEmbedBuilder
                 {
-                    Title = "Access denied",
-                    Description = $"{emoji} This command cannot be executed here.",
+                    Title = "Access denied.",
+                    Description = $"{emoji} One or more prerequisites was not met.",
                     Color = new DiscordColor(0xFF0000) // red
                 };
                 await e.Context.RespondAsync("", embed: embed);
